@@ -117,6 +117,16 @@ def _feature_from_feature_spec(spec, name, domains):
         name=name,
         presence=schema_pb2.FeaturePresence(min_fraction=1.0),
         shape=schema_pb2.FixedShape(dim=dims))
+  elif isinstance(spec, tf.io.FixedLenSequenceFeature):
+    if spec.default_value is not None:
+      raise ValueError(
+          'feature "{}" had default_value {}, but FixedLenSequenceFeature must have '
+          'default_value=None'.format(name, spec.default_value))
+    dims = [schema_pb2.FixedShape.Dim()] + [schema_pb2.FixedShape.Dim(size=size) for size in spec.shape]
+    feature = schema_pb2.Feature(
+        name=name,
+        presence=schema_pb2.FeaturePresence(min_fraction=1.0),
+        shape=schema_pb2.FixedShape(dim=dims))
   elif isinstance(spec, tf.io.VarLenFeature):
     feature = schema_pb2.Feature(name=name)
   else:
@@ -307,8 +317,12 @@ def _feature_as_feature_spec(feature, string_domains):
           'Feature "{}" had shape {} set but min_fraction {} != 1.  Use'
           ' value_count not shape field when min_fraction != 1.'.format(
               feature.name, feature.shape, feature.presence.min_fraction))
-    spec = tf.io.FixedLenFeature(
-        _fixed_shape_as_tf_shape(feature.shape), dtype, default_value=None)
+    if len(feature.shape.dim) > 0 and not feature.shape.dim[0].HasField('size'):
+      spec = tf.io.FixedLenSequenceFeature(
+        _fixed_shape_dims_as_tf_shape(feature.shape.dim[1:]), dtype, default_value=None)
+    else:
+      spec = tf.io.FixedLenFeature(
+        _fixed_shape_dims_as_tf_shape(feature.shape.dim), dtype, default_value=None)
   else:
     spec = tf.io.VarLenFeature(dtype)
   domain = _get_domain(feature, string_domains)
@@ -328,12 +342,12 @@ def _feature_dtype(feature):
         feature.name, schema_pb2.FeatureType.Name(feature.type)))
 
 
-def _fixed_shape_as_tf_shape(fixed_shape):
+def _fixed_shape_dims_as_tf_shape(fixed_shape_dims):
   """Returns a representation of a FixedShape as a tensorflow shape."""
   # TODO(b/120869660): Remove the cast to int.  Casting to int is currently
   # needed as some TF code explicitly checks for `int` and does not allow `long`
   # in tensor shapes.
-  return [int(dim.size) for dim in fixed_shape.dim]
+  return [int(dim.size) for dim in fixed_shape_dims]
 
 
 _DEPRECATED_LIFECYCLE_STAGES = [

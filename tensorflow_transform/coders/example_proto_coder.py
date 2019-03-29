@@ -198,6 +198,81 @@ class _FixedLenFeatureHandler(object):
       self._value.extend(self._cast_fn(flattened_values))
 
 
+class _FixedLenSequenceFeatureHandler(object):
+  """Handler for `FixedLenSequenceFeature` values.
+
+  `FixedLenSequenceFeature` values will be parsed to a list of the corresponding
+  dtype.
+  """
+
+  def __init__(self, name, feature_spec):
+    self._name = name
+    self._np_dtype = feature_spec.dtype.as_numpy_dtype
+    self._value_fn = _make_feature_value_fn(feature_spec.dtype)
+    self._shape = feature_spec.shape
+    self._rank = 1 + len(feature_spec.shape)
+    self._size = 1
+    for dim in feature_spec.shape:
+      self._size *= dim
+    default_value = feature_spec.default_value
+    if default_value is not None:
+      try:
+        np_default_value = np.asarray(default_value, dtype=self._np_dtype)
+      except ValueError:
+        raise ValueError(
+            'FixedLenFeature %r got default value with incompatible dtype %s' %
+            (self._name, feature_spec.dtype))
+      if list(np_default_value.shape) != self._shape:
+        raise ValueError(
+            'FixedLenFeature %r got default value with incorrect shape' %
+            self._name)
+      default_value = np_default_value.reshape(-1).tolist()
+    self._default_value = default_value
+
+  @property
+  def name(self):
+    """The name of the feature."""
+    return self._name
+
+  def initialize_encode_cache(self, example):
+    """Initialize fields (performance caches) that point to example's state."""
+    self._cast_fn = _make_cast_fn(self._np_dtype)
+    self._value = self._value_fn(example.features.feature[self._name])
+
+  def parse_value(self, feature_map):
+    """Non-Mutating Decode of a feature into its TF.Transform representation."""
+    if self._name in feature_map:
+      feature = feature_map[self._name]
+      values = self._value_fn(feature)
+    elif self._default_value is not None:
+      values = self._default_value
+    else:
+      values = []
+
+    if len(values) % self._size != 0:
+      raise ValueError('FixedLenSequenceFeature %r got wrong number of values. Expected a multiple of'
+                       ' %d but got %d' % (self._name, self._size, len(values)))
+
+    if self._rank == 1:
+      # Short-circuit the reshaping logic needed for rank > 1.
+      return np.asarray(values, dtype=self._np_dtype)
+    else:
+      return np.asarray(values, dtype=self._np_dtype).reshape((-1,) + self._shape)
+
+  def encode_value(self, values):
+    """Encodes a feature into its Example proto representation."""
+    del self._value[:]
+    if self._rank == 1:
+      self._value.extend(self._cast_fn(values))
+    else:
+      flattened_values = np.asarray(values, dtype=self._np_dtype).reshape(-1)
+      if len(flattened_values) % self._size != 0:
+        raise ValueError('FixedLenSequenceFeature %r got wrong number of values. '
+                         'Expected multiple of %d but got %d' %
+                         (self._name, self._size, len(flattened_values)))
+      self._value.extend(self._cast_fn(flattened_values))
+
+
 class _VarLenFeatureHandler(object):
   """Handler for `VarLenFeature` values.
 
@@ -280,6 +355,9 @@ class ExampleProtoCoder(object):
       if isinstance(feature_spec, tf.io.FixedLenFeature):
         self._feature_handlers.append(
             _FixedLenFeatureHandler(name, feature_spec))
+      elif isinstance(feature_spec, tf.io.FixedLenSequenceFeature):
+        self._feature_handlers.append(
+            _FixedLenSequenceFeatureHandler(name, feature_spec))
       elif isinstance(feature_spec, tf.io.VarLenFeature):
         self._feature_handlers.append(
             _VarLenFeatureHandler(name, feature_spec.dtype))

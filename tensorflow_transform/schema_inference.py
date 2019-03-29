@@ -65,12 +65,20 @@ def _feature_spec_from_batched_tensors(tensors):
         raise ValueError(
             '{} had invalid shape {} for FixedLenFeature: must have rank '
             'at least 1'.format(tensor, shape))
-      if any(dim is None for dim in shape.as_list()[1:]):
-        raise ValueError(
-            '{} had invalid shape {} for FixedLenFeature: apart from the batch '
-            'dimension, all dimensions must have known size'.format(
-                tensor, shape))
-      result[name] = tf.io.FixedLenFeature(shape.as_list()[1:], tensor.dtype)
+      if shape.ndims >= 2 and shape.as_list()[:2] == [None, None]:
+        if any(dim is None for dim in shape.as_list()[2:]):
+          raise ValueError(
+              '{} had invalid shape {} for FixedLenSequenceFeature: apart from the batch '
+              'and the variable length dimension, all dimensions must have known size'.format(
+                  tensor, shape))
+        result[name] = tf.io.FixedLenSequenceFeature(shape.as_list()[2:], tensor.dtype)
+      else:
+        if any(dim is None for dim in shape.as_list()[1:]):
+          raise ValueError(
+              '{} had invalid shape {} for FixedLenFeature: apart from the batch '
+              'dimension, all dimensions must have known size'.format(
+                  tensor, shape))
+        result[name] = tf.io.FixedLenFeature(shape.as_list()[1:], tensor.dtype)
     else:
       raise TypeError(
           'Expected a Tensor or SparseTensor, got {} of type {}'.format(

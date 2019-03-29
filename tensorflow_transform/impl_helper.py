@@ -62,6 +62,9 @@ def feature_spec_as_batched_placeholders(feature_spec):
     if isinstance(spec, tf.io.FixedLenFeature):
       result[name] = tf.compat.v1.placeholder(
           spec.dtype, [None] + spec.shape, name=name)
+    elif isinstance(spec, tf.io.FixedLenSequenceFeature):
+      result[name] = tf.compat.v1.placeholder(
+          spec.dtype, [None, None] + spec.shape, name=name)
     elif isinstance(spec, tf.io.VarLenFeature):
       result[name] = tf.compat.v1.sparse_placeholder(
           spec.dtype, [None, None], name=name)
@@ -141,7 +144,7 @@ def make_feed_list(column_names, schema, instances):
   for name in column_names:
     spec = feature_spec[name]
     # TODO(abrao): Validate dtypes, shapes etc.
-    if isinstance(spec, tf.io.FixedLenFeature):
+    if isinstance(spec, tf.io.FixedLenFeature) or isinstance(spec, tf.io.FixedLenSequenceFeature):
       feed_value = [instance[name] for instance in instances]
 
     elif isinstance(spec, tf.io.VarLenFeature):
@@ -251,7 +254,7 @@ def to_instance_dicts(schema, fetches):
   feature_spec = schema.as_feature_spec()
   for name, value in six.iteritems(fetches):
     spec = feature_spec[name]
-    if isinstance(spec, tf.io.FixedLenFeature):
+    if isinstance(spec, tf.io.FixedLenFeature) or isinstance(spec, tf.io.FixedLenSequenceFeature):
       batch_dict[name] = [value[i] for i in range(value.shape[0])]
       batch_sizes[name] = value.shape[0]
 
